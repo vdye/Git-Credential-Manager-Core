@@ -35,3 +35,24 @@ jobs:
         path: |
           out/linux/Packaging.Linux/deb/Release/*.deb
           out/linux/Packaging.Linux/tar/Release/*.tar.gz
+  test-linux:
+    name: "Test .deb installation"
+    runs-on: ubuntu-18.04
+    needs: Linux
+    steps:
+      - name: Download Installers
+        uses: actions/download-artifact@v2
+        with:
+          name: Installers
+      - name: Install packages
+        run: |
+          # Get the name of the package
+          gcm_deb=$(find . -name "*.deb")
+          sudo apt install $gcm_deb
+
+          # Find the executables
+          which git-credential-manager-core
+          which Atlassian.Bitbucket.UI
+          which GitHub.UI
+
+          ls -l /usr/local/bin
