@@ -1254,5 +1254,56 @@ namespace Microsoft.Git.CredentialManager.Tests
             Assert.NotNull(actualValues);
             Assert.Equal(expectedValues, actualValues);
         }
+
+        [Theory]
+        [InlineData(null, null, false, null, null)]
+        [InlineData(null, "ca-config.crt", false, null, "ca-config.crt")]
+        [InlineData("ca-envar.crt", "ca-config.crt", false, null, "ca-envar.crt")]
+        [InlineData(null, "ca-config.crt", true, null, null)]
+        [InlineData(null, "ca-config.crt", true, "false", null)]
+        [InlineData(null, "ca-config.crt", true, "True", "ca-config.crt")]
+        public void Settings_SslCaInfo_ReturnsExpectedValue(string sslCaInfoEnvar, string sslCaInfoConfig,
+            bool schannelBackend, string schannelUseSslCaInfoConfig, string expectedValue)
+        {
+            const string envarName = Constants.EnvironmentVariables.GitSslCaInfo;
+            const string section = Constants.GitConfiguration.Http.SectionName;
+            const string sslBackend = Constants.GitConfiguration.Http.SslBackend;
+            const string schannelUseSslCaInfo = Constants.GitConfiguration.Http.SchannelUseSslCaInfo;
+            const string sslCaInfo = Constants.GitConfiguration.Http.SslCaInfo;
+
+            var envars = new TestEnvironment();
+            if (sslCaInfoEnvar != null)
+            {
+                envars.Variables[envarName] = sslCaInfoEnvar;
+            }
+
+            var git = new TestGit();
+            if (schannelBackend)
+            {
+                git.Configuration.Local[$"{section}.{sslBackend}"] = new[] {"schannel"};
+            }
+            if (schannelUseSslCaInfoConfig != null)
+            {
+                git.Configuration.Local[$"{section}.{schannelUseSslCaInfo}"] = new[] {schannelUseSslCaInfoConfig};
+            }
+            if (sslCaInfoConfig != null)
+            {
+                git.Configuration.Local[$"{section}.{sslCaInfo}"] = new[] {sslCaInfoConfig};
+            }
+
+            var settings = new Settings(envars, git);
+
+            string actualValue = settings.SslCaInfo;
+
+            if (expectedValue is null)
+            {
+                Assert.Null(actualValue);
+            }
+            else
+            {
+                Assert.NotNull(actualValue);
+                Assert.Equal(expectedValue, actualValue);
+            }
+        }
     }
 }

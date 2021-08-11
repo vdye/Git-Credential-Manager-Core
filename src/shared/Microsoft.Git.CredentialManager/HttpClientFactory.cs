@@ -6,6 +6,8 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 
 namespace Microsoft.Git.CredentialManager
 {
@@ -82,6 +84,35 @@ namespace Microsoft.Git.CredentialManager
                 ServicePointManager.ServerCertificateValidationCallback = (req, cert, chain, errors) => true;
 #elif NETSTANDARD
                 handler.ServerCertificateCustomValidationCallback = (req, cert, chain, errors) => true;
+#endif
+            }
+
+            string sslCaInfo = _settings.SslCaInfo;
+            if (!string.IsNullOrWhiteSpace(sslCaInfo))
+            {
+                Func<X509Chain, SslPolicyErrors, bool> validationCallback = (chain, errors) =>
+                {
+                    if ((errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != 0 ||
+                        chain.ChainStatus.Any(status => status.Status != X509ChainStatusFlags.UntrustedRoot))
+                    {
+                        // Fail validation if remote cert has any errors other than untrusted root
+                        return false;
+                    }
+
+                    // Get the custom CA root from http.sslCAInfo
+                    X509Certificate2 caBundle = new X509Certificate2(sslCaInfo);
+
+                    // Read the root of the remote certificate chain
+                    X509Certificate2 remoteRoot = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
+
+                    // Compare the custom CA to the remote certificate root
+                    return caBundle.RawData.SequenceEqual(remoteRoot.RawData);
+                };
+
+#if NETFRAMEWORK
+                ServicePointManager.ServerCertificateValidationCallback = (_, _, chain, errors) => validationCallback(chain, errors);
+#elif NETSTANDARD
+                handler.ServerCertificateCustomValidationCallback = (_, _, chain, errors) => validationCallback(chain, errors);
 #endif
             }
 

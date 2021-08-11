@@ -119,6 +119,12 @@ namespace Microsoft.Git.CredentialManager
         /// Credential backing store override.
         /// </summary>
         string CredentialBackingStore { get; }
+
+        /// <summary>
+        /// Optional path to a custom root certificate authority to trust
+        /// </summary>
+        /// <remarks>The default value is null if unset.</remarks>
+        string SslCaInfo { get; }
     }
 
     public class ProxyConfiguration
@@ -389,6 +395,30 @@ namespace Microsoft.Git.CredentialManager
 
                 // Safe default
                 return true;
+            }
+        }
+
+        public string SslCaInfo
+        {
+            get
+            {
+                // First, verify that, if schannel is the HTTP backend, sslCaInfo must be explicitly enabled to be used
+                if (TryGetSetting(null, KnownGitCfg.Http.SectionName, KnownGitCfg.Http.SslBackend, out string backend) &&
+                    StringComparer.OrdinalIgnoreCase.Equals(backend, "schannel") &&
+                    (!TryGetSetting(null, KnownGitCfg.Http.SectionName, KnownGitCfg.Http.SchannelUseSslCaInfo, out string schannelUseSslCaInfo) ||
+                    !schannelUseSslCaInfo.ToBooleanyOrDefault(false)))
+                {
+                    return null;
+                }
+
+                // Next try the equivalent Git configuration option
+                if (TryGetSetting(KnownEnvars.GitSslCaInfo, KnownGitCfg.Http.SectionName, KnownGitCfg.Http.SslCaInfo, out string cfgValue))
+                {
+                    return cfgValue;
+                }
+
+                // Safe default
+                return null;
             }
         }
 

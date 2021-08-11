@@ -39,6 +39,8 @@ namespace Microsoft.Git.CredentialManager.Tests.Objects
 
         public string CredentialBackingStore { get; set; }
 
+        public string SslCaInfo { get; set; }
+
         #region ISettings
 
         public bool TryGetSetting(string envarName, string section, string property, out string value)
@@ -116,6 +118,8 @@ namespace Microsoft.Git.CredentialManager.Tests.Objects
         string ISettings.CredentialNamespace => CredentialNamespace;
 
         string ISettings.CredentialBackingStore => CredentialBackingStore;
+
+        string ISettings.SslCaInfo => SslCaInfo;
 
         #endregion
 
