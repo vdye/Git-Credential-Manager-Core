@@ -1256,19 +1256,13 @@ namespace Microsoft.Git.CredentialManager.Tests
         }
 
         [Theory]
-        [InlineData(null, null, false, null, null)]
-        [InlineData(null, "ca-config.crt", false, null, "ca-config.crt")]
-        [InlineData("ca-envar.crt", "ca-config.crt", false, null, "ca-envar.crt")]
-        [InlineData(null, "ca-config.crt", true, null, null)]
-        [InlineData(null, "ca-config.crt", true, "false", null)]
-        [InlineData(null, "ca-config.crt", true, "True", "ca-config.crt")]
-        public void Settings_SslCaInfo_ReturnsExpectedValue(string sslCaInfoEnvar, string sslCaInfoConfig,
-            bool schannelBackend, string schannelUseSslCaInfoConfig, string expectedValue)
+        [InlineData(null, null, null)]
+        [InlineData(null, "ca-config.crt", "ca-config.crt")]
+        [InlineData("ca-envar.crt", "ca-config.crt", "ca-envar.crt")]
+        public void Settings_CustomCertificateBundlePath_ReturnsExpectedValue(string sslCaInfoEnvar, string sslCaInfoConfig, string expectedValue)
         {
             const string envarName = Constants.EnvironmentVariables.GitSslCaInfo;
             const string section = Constants.GitConfiguration.Http.SectionName;
-            const string sslBackend = Constants.GitConfiguration.Http.SslBackend;
-            const string schannelUseSslCaInfo = Constants.GitConfiguration.Http.SchannelUseSslCaInfo;
             const string sslCaInfo = Constants.GitConfiguration.Http.SslCaInfo;
 
             var envars = new TestEnvironment();
@@ -1278,14 +1272,6 @@ namespace Microsoft.Git.CredentialManager.Tests
             }
 
             var git = new TestGit();
-            if (schannelBackend)
-            {
-                git.Configuration.Local[$"{section}.{sslBackend}"] = new[] {"schannel"};
-            }
-            if (schannelUseSslCaInfoConfig != null)
-            {
-                git.Configuration.Local[$"{section}.{schannelUseSslCaInfo}"] = new[] {schannelUseSslCaInfoConfig};
-            }
             if (sslCaInfoConfig != null)
             {
                 git.Configuration.Local[$"{section}.{sslCaInfo}"] = new[] {sslCaInfoConfig};
@@ -1293,7 +1279,39 @@ namespace Microsoft.Git.CredentialManager.Tests
 
             var settings = new Settings(envars, git);
 
-            string actualValue = settings.SslCaInfo;
+            string actualValue = settings.CustomCertificateBundlePath;
+
+            if (expectedValue is null)
+            {
+                Assert.Null(actualValue);
+            }
+            else
+            {
+                Assert.NotNull(actualValue);
+                Assert.Equal(expectedValue, actualValue);
+            }
+        }
+
+        [Theory]
+        [InlineData(null, null)]
+        [InlineData("schannel", TlsBackend.Schannel)]
+        [InlineData("openssl", TlsBackend.Other)]
+        public void Settings_TlsBackend_ReturnsExpectedValue(string sslBackendConfig, TlsBackend? expectedValue)
+        {
+            const string section = Constants.GitConfiguration.Http.SectionName;
+            const string sslBackend = Constants.GitConfiguration.Http.SslBackend;
+
+            var envars = new TestEnvironment();
+
+            var git = new TestGit();
+            if (sslBackendConfig != null)
+            {
+                git.Configuration.Local[$"{section}.{sslBackend}"] = new[] {sslBackendConfig};
+            }
+
+            var settings = new Settings(envars, git);
+
+            TlsBackend? actualValue = settings.TlsBackend;
 
             if (expectedValue is null)
             {

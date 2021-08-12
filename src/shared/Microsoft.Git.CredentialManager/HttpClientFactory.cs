@@ -2,6 +2,7 @@
 // Licensed under the MIT license.
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Http;
@@ -36,16 +37,19 @@ namespace Microsoft.Git.CredentialManager
 
     public class HttpClientFactory : IHttpClientFactory
     {
+        private readonly IFileSystem _fileSystem;
         private readonly ITrace _trace;
         private readonly ISettings _settings;
         private readonly IStandardStreams _streams;
 
-        public HttpClientFactory(ITrace trace, ISettings settings, IStandardStreams streams)
+        public HttpClientFactory(IFileSystem fileSystem, ITrace trace, ISettings settings, IStandardStreams streams)
         {
+            EnsureArgument.NotNull(fileSystem, nameof(fileSystem));
             EnsureArgument.NotNull(trace, nameof(trace));
             EnsureArgument.NotNull(settings, nameof(settings));
             EnsureArgument.NotNull(streams, nameof(streams));
 
+            _fileSystem = fileSystem;
             _trace = trace;
             _settings = settings;
             _streams = streams;
@@ -72,6 +76,7 @@ namespace Microsoft.Git.CredentialManager
                 handler = new HttpClientHandler();
             }
 
+            // IsCertificateVerificationEnabled takes precedence over custom TLS cert verification
             if (!_settings.IsCertificateVerificationEnabled)
             {
                 _trace.WriteLine("TLS certificate verification has been disabled.");
@@ -86,33 +91,89 @@ namespace Microsoft.Git.CredentialManager
                 handler.ServerCertificateCustomValidationCallback = (req, cert, chain, errors) => true;
 #endif
             }
-
-            string sslCaInfo = _settings.SslCaInfo;
-            if (!string.IsNullOrWhiteSpace(sslCaInfo))
+            // If schannel is the TLS backend, custom certificate usage must be explicitly enabled
+            else if (!string.IsNullOrWhiteSpace(_settings.CustomCertificateBundlePath) &&
+                ((_settings.TlsBackend != TlsBackend.Schannel) || _settings.UseCustomCertificateBundleWithSchannel))
             {
-                Func<X509Chain, SslPolicyErrors, bool> validationCallback = (chain, errors) =>
+                string certBundlePath = _settings.CustomCertificateBundlePath;
+                _trace.WriteLine($"Custom certificate verification has been enabled with certificate bundle at {certBundlePath}");
+
+                // Throw exception if cert bundle file not found
+                if (!_fileSystem.FileExists(certBundlePath))
                 {
-                    if ((errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != 0 ||
-                        chain.ChainStatus.Any(status => status.Status != X509ChainStatusFlags.UntrustedRoot))
+                    throw new FileNotFoundException($"Custom certificate bundle not found at path: {certBundlePath}", certBundlePath);
+                }
+
+                Func<X509Certificate2, X509Chain, SslPolicyErrors, bool> validationCallback = (cert, chain, errors) =>
+                {
+                    // Fail immediately if there are non-chain issues with the remote cert
+                    if ((errors & ~SslPolicyErrors.RemoteCertificateChainErrors) != 0)
                     {
-                        // Fail validation if remote cert has any errors other than untrusted root
                         return false;
                     }
 
-                    // Get the custom CA root from http.sslCAInfo
-                    X509Certificate2 caBundle = new X509Certificate2(sslCaInfo);
+                    // Import the custom certs
+                    X509Certificate2Collection certBundle = new X509Certificate2Collection();
+                    certBundle.Import(certBundlePath);
 
-                    // Read the root of the remote certificate chain
-                    X509Certificate2 remoteRoot = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
+                    // Add the certs to the chain
+                    chain.ChainPolicy.ExtraStore.AddRange(certBundle);
 
-                    // Compare the custom CA to the remote certificate root
-                    return caBundle.RawData.SequenceEqual(remoteRoot.RawData);
+                    bool isValid = chain.Build(cert);
+
+                    // Rebuild the chain
+                    if (chain.Build(cert))
+                    {
+                        return true;
+                    }
+                    else if (chain.ChainStatus.Any(status => status.Status != X509ChainStatusFlags.UntrustedRoot))
+                    {
+                        // Fail for any errors other than untrusted root
+                        return false;
+                    }
+                    else if (chain.ChainStatus.Any(status => status.Status == X509ChainStatusFlags.UntrustedRoot))
+                    {
+                        // Manually verify root is contained within the certBundle
+                        X509Certificate2 rootCert = chain.ChainElements[chain.ChainElements.Count - 1].Certificate;
+                        var matchingCerts = certBundle.Find(X509FindType.FindByThumbprint, rootCert.Thumbprint, true);
+                        if (matchingCerts.Count > 0)
+                        {
+                            // Check the content of the first matching cert found (do
+                            // not try others if mismatched - mirrors OpenSSL:
+                            // https://www.openssl.org/docs/man1.1.1/man3/SSL_CTX_set_default_verify_paths.html#WARNINGS)
+                            return rootCert.RawData.SequenceEqual(matchingCerts[0].RawData);
+                        }
+                        else
+                        {
+                            // Untrusted root not found in custom cert bundle
+                            return false;
+                        }
+                    }
+                    else
+                    {
+                        // Errors not due to ChainStatus errors - fail
+                        return false;
+                    }
                 };
 
+                // Set the custom server certificate validation callback.
+                // NOTE: this is executed after the default platform server certificate validation is performed
 #if NETFRAMEWORK
-                ServicePointManager.ServerCertificateValidationCallback = (_, _, chain, errors) => validationCallback(chain, errors);
+                ServicePointManager.ServerCertificateValidationCallback = (_, cert, chain, errors) =>
+                {
+                    // Fail immediately if the cert or chain isn't present
+                    if (cert is null || chain is null)
+                    {
+                        return false;
+                    }
+
+                    using (X509Certificate2 cert2 = new X509Certificate2(cert))
+                    {
+                        return validationCallback(cert2, chain, errors);
+                    }
+                };
 #elif NETSTANDARD
-                handler.ServerCertificateCustomValidationCallback = (_, _, chain, errors) => validationCallback(chain, errors);
+                handler.ServerCertificateCustomValidationCallback = (_, cert, chain, errors) => validationCallback(cert, chain, errors);
 #endif
             }
 
