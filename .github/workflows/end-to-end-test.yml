@@ -64,3 +64,8 @@ jobs:
         run: behave -k src/test/cucumber/features
       # End DEMO: Cucumber (behave)
 
+      # DEMO: C# (xunit)
+      - name: Run .NET Tests
+        run: dotnet test src/test/csharp-xunit
+      # End DEMO: C# (xunit)
+
