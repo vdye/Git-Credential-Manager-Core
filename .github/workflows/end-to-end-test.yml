@@ -17,6 +17,7 @@ jobs:
         with:
           fetch-depth: 0 # Indicate full history so Nerdbank.GitVersioning works.
 
+      # Build & Install
       - name: Setup .NET
         uses: actions/setup-dotnet@v1
         with:
@@ -50,3 +51,16 @@ jobs:
 
       - name: Verify Install
         run: git config --get-all credential.helper
+      # End Build & Install
+
+      # DEMO: Cucumber (behave)
+      - name: Setup Python
+        uses: actions/setup-python@v2
+
+      - name: Install Python Dependencies
+        run: pip install -r src/test/cucumber/requirements.txt
+
+      - name: Run Cucumber Tests
+        run: behave -k src/test/cucumber/features
+      # End DEMO: Cucumber (behave)
+
