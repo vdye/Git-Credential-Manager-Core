@@ -69,3 +69,11 @@ jobs:
         run: dotnet test src/test/csharp-xunit
       # End DEMO: C# (xunit)
 
+      # DEMO: RobotFramework
+      - name: Install Python Dependencies
+        run: pip install -r src/test/robot/requirements.txt
+
+      - name: Run RobotFramework Tests
+        run: robot -o NONE -l NONE -r NONE src/test/robot/clone.robot
+      # End DEMO: RobotFramework
+
