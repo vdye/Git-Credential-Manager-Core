@@ -444,10 +444,9 @@ namespace GitCredentialManager
                  *
                  */
                 string name = $"{section}.{property}";
-                if ((isPath && config.TryGet(name, true, out value)) ||
-                    _configEntries.TryGetValue(name, out value))
-                {
-                    yield return value;
+                if (_configEntries.TryGetValue(name, out value) &&
+                    (!isPath || config.TryGet(name, true, out value))) {
+                        yield return value;
                 }
 
                 // Check for an externally specified default value without a scope
